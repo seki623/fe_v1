@@ -47,7 +47,7 @@
             font-size: 0.9rem;
             margin-bottom: 15px;
         }
-        .setup-screen input {
+        .setup-screen input[type="number"] {
             width: 80px;
             padding: 10px;
             font-size: 1.2rem;
@@ -57,6 +57,27 @@
             color: #ffffff;
             text-align: center;
             margin-bottom: 25px;
+        }
+        /* モード選択のスタイル */
+        .mode-selection {
+            background-color: #151515;
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 25px;
+            display: flex;
+            justify-content: center;
+            gap: 20px;
+            border: 1px solid #2c2c2c;
+        }
+        .mode-label {
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 0.95rem;
+        }
+        .mode-label input {
+            cursor: pointer;
         }
         .btn {
             background-color: var(--primary-color);
@@ -158,7 +179,20 @@
     <div id="setupScreen" class="screen active">
         <h1>暗記フラッシュカード</h1>
         <div id="statusMsg" class="status-message">データを読み込み中...</div>
-        <p>カードが切り替わる秒数を指定してください</p>
+        
+        <p>出題モードを選択してください</p>
+        <div class="mode-selection">
+            <label class="mode-label">
+                <input type="radio" name="quizMode" value="descToTerm" checked>
+                解説 ⇒ 用語
+            </label>
+            <label class="mode-label">
+                <input type="radio" name="quizMode" value="termToDesc">
+                用語 ⇒ 解説
+            </label>
+        </div>
+
+        <p>カード切り替わり秒数を指定</p>
         <input type="number" id="intervalInput" value="5" min="1" max="60"> 秒<br>
         <button class="btn" id="startBtn" onclick="startFlashcard()" disabled>スタート</button>
     </div>
@@ -182,13 +216,14 @@
 <script>
     let cards = [];
     let currentIndex = 0;
-    let isShowingTerm = false;
+    let isShowingAnswer = false; // 答えを表示しているかどうかのフラグ
     let intervalTime = 5000;
     let timerId = null;
     let animationId = null;
     let startTime = 0;
     let pausedTime = 0;
     let isPaused = false;
+    let currentMode = "descToTerm"; // 出題モードの保持用
 
     const setupScreen = document.getElementById('setupScreen');
     const cardScreen = document.getElementById('cardScreen');
@@ -201,33 +236,29 @@
     const startBtn = document.getElementById('startBtn');
     const statusMsg = document.getElementById('statusMsg');
 
-    // 📥 data.json を非同期で読み込んでそのまま配列として格納する
+    // data.json を非同期で読み込む処理
     async function loadExternalJSON() {
         try {
             const response = await fetch('data.json');
             if (!response.ok) {
-                throw new Error('data.json の読み込みに失敗しました。');
+                throw new Error('データが読み込めないみたい');
             }
-            // JSONデータをオブジェクト配列としてそのままパース
             cards = await response.json();
-
-            // 正しい形式のデータのみを抽出
             cards = cards.filter(card => card.term && card.desc);
 
             if (cards.length > 0) {
                 statusMsg.style.color = '#03dac6';
-                statusMsg.innerText = `JSONデータを正常に読み込みました (${cards.length}問)`;
+                statusMsg.innerText = `準備完了！ (${cards.length}問)`;
                 startBtn.disabled = false;
             } else {
                 statusMsg.innerText = 'データが空、または形式が正しくありません。';
             }
         } catch (error) {
-            statusMsg.innerText = 'エラー: data.json が見つからないか、反映待ちです。';
+            statusMsg.innerText = 'エラー: データが見つからない！待ってて！。';
             console.error(error);
         }
     }
 
-    // 画面を開いた瞬間にJSON読み込みを開始
     window.addEventListener('DOMContentLoaded', loadExternalJSON);
 
     function shuffle(array) {
@@ -244,12 +275,16 @@
 
     function startFlashcard() {
         if (cards.length === 0) return;
+        
+        // 選択された出題モードを取得
+        currentMode = document.querySelector('input[name="quizMode"]:checked').value;
+        
         const sec = parseInt(intervalInput.value, 10) || 5;
         intervalTime = sec * 1000;
 
         shuffle(cards);
         currentIndex = 0;
-        isShowingTerm = false;
+        isShowingAnswer = false;
         isPaused = false;
         pauseBtn.innerText = "一時停止";
 
@@ -267,14 +302,28 @@
         progressText.innerText = `${currentIndex + 1} / ${cards.length}`;
         const currentCard = cards[currentIndex];
 
-        if (!isShowingTerm) {
-            cardLabel.innerText = "解説（これの用語は何？）";
-            cardLabel.className = "label description";
-            cardContent.innerText = currentCard.desc;
+        if (currentMode === "descToTerm") {
+            // 【標準モード】解説 ⇒ 用語
+            if (!isShowingAnswer) {
+                cardLabel.innerText = "解説";
+                cardLabel.className = "label description";
+                cardContent.innerText = currentCard.desc;
+            } else {
+                cardLabel.innerText = "用語";
+                cardLabel.className = "label term";
+                cardContent.innerText = currentCard.term;
+            }
         } else {
-            cardLabel.innerText = "答え（用語）";
-            cardLabel.className = "label term";
-            cardContent.innerText = currentCard.term;
+            // 【逆転モード】用語 ⇒ 解説
+            if (!isShowingAnswer) {
+                cardLabel.innerText = "用語";
+                cardLabel.className = "label term";
+                cardContent.innerText = currentCard.term;
+            } else {
+                cardLabel.innerText = "解説";
+                cardLabel.className = "label description";
+                cardContent.innerText = currentCard.desc;
+            }
         }
 
         startTimer();
@@ -304,10 +353,10 @@
         animationId = requestAnimationFrame(updateProgressBar);
 
         timerId = setTimeout(() => {
-            if (!isShowingTerm) {
-                isShowingTerm = true;
+            if (!isShowingAnswer) {
+                isShowingAnswer = true;
             } else {
-                isShowingTerm = false;
+                isShowingAnswer = false;
                 currentIndex++;
             }
             showCard();
